@@ -67,7 +67,7 @@ class Popup(QTableView):
         if cols > 0:
             col_width = w / cols
             for i in range(cols):
-                self.setColumnWidth(i, col_width)
+                self.setColumnWidth(i, int(col_width))
 
     def popup(self):
         self._resize(self._window.size())

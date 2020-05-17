@@ -238,7 +238,7 @@ def next_completion(ctx):
     """
     Select the next hint.
     """
-    ctx.buffer.select_nex_browser_object()
+    ctx.buffer.select_next_browser_object()
 
 
 @define_command("hint-prev")
@@ -246,4 +246,4 @@ def previous_completion(ctx):
     """
     Select the previous hint.
     """
-    ctx.buffer.select_nex_browser_object(False)
+    ctx.buffer.select_next_browser_object(False)

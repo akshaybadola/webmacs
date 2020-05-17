@@ -25,7 +25,7 @@ import warnings
 from PyQt5.QtNetwork import QAbstractSocket
 
 from .ipc import IpcServer
-from . import variables, filter_webengine_output
+from . import variables, proxy, filter_webengine_output
 
 
 log_to_disk = variables.define_variable(
@@ -141,14 +141,14 @@ def parse_args(argv=None):
     parser.add_argument("url", nargs="?",
                         help="url to open")
 
-    opts = parser.parse_args(argv)
+    opts, user_opts = parser.parse_known_args(argv)
 
     # handle local file path
     if opts.url and os.path.exists(opts.url) \
        and not os.path.isabs(opts.url):
         opts.url = os.path.realpath(opts.url)
 
-    return opts
+    return opts, user_opts
 
 
 def init(opts):
@@ -229,7 +229,7 @@ else:
 
 
 def main():
-    opts = parse_args()
+    opts, user_opts = parse_args()
 
     if opts.list_instances:
         for instance in IpcServer.list_all_instances():
@@ -285,6 +285,9 @@ def main():
     server = IpcServer(opts.instance)
     atexit.register(server.cleanup)
 
+    proxy.init()
+    atexit.register(proxy.shutdown)
+
     out_filter.enable()
 
     # execute the user init function if there is one
@@ -292,7 +295,7 @@ def main():
         init(opts)
     else:
         try:
-            user_init.init(opts)
+            user_init.init(opts, user_opts)
         except Exception:
             _handle_user_init_error(
                 conf_path,

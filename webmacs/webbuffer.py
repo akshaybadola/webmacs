@@ -237,7 +237,7 @@ class WebBuffer(QWebEnginePage):
             "hints.clearBrowserObjects();",
             QWebEngineScript.ApplicationWorld)
 
-    def select_nex_browser_object(self, forward=True):
+    def select_next_browser_object(self, forward=True):
         self.runJavaScript(
             "hints.activateNextHint(%s);" % ("false" if forward else "true",),
             QWebEngineScript.ApplicationWorld)

@@ -20,7 +20,7 @@ from .. import windows, BUFFERS, call_later
 MINIBUFFER_RIGHTLABEL = variables.define_variable(
     "minibuffer-right-label",
     "Format for displaying some information in right label of minibuffer.",
-    "{loading}{mode}: {local_keymap} [{buffer_current}/{buffer_count}]",
+    "{loading}[{url}] {mode}: {local_keymap} [{buffer_current}/{buffer_count}]",
     type=variables.String(),
 )
 
@@ -46,7 +46,9 @@ def _update_minibuffer_right_label(window):
         return
 
     buff = window.current_webview().buffer()
-
+    url = buff.url().url()
+    if "?" in url:
+        url = url.split("?")[0] + "{..}"  # exclude options
     try:
         loading_p = BUFF_PROGRESS[buff]
     except KeyError:
@@ -61,6 +63,7 @@ def _update_minibuffer_right_label(window):
             local_keymap=keyboardhandler.local_keymap(),
             mode=getattr(buff, "mode", "unknown"),
             loading=loading,
+            url=url
         )
     )
 
