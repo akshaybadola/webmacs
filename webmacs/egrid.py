@@ -59,7 +59,7 @@ class LayoutEntry(object):
 
         elif self.split == ViewGridLayout.VERTICAL:
             x = rect.x()
-            width = rect.width() / len(self.children)
+            width = rect.width() // len(self.children)
             for child in self.children:
                 cr = QRect(x, rect.y(), width, rect.height())
                 child.set_geometry(cr)
@@ -67,7 +67,7 @@ class LayoutEntry(object):
 
         elif self.split == ViewGridLayout.HORIZONTAL:
             y = rect.y()
-            height = rect.height() / len(self.children)
+            height = rect.height() // len(self.children)
             for child in self.children:
                 cr = QRect(rect.x(), y, rect.width(), height)
                 child.set_geometry(cr)

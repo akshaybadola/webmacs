@@ -21,7 +21,12 @@ class Hook(list):
 
     __call__ = call
 
-    add = list.append
+    def add(self, hook):
+        if callable(hook):
+            self.append(hook)
+        else:
+            print("Given hook is not callable")
+    # add = list.append
 
     def remove_if_exists(self, cb):
         try:
