@@ -25,7 +25,7 @@ import warnings
 from PyQt5.QtNetwork import QAbstractSocket
 
 from .ipc import IpcServer
-from . import variables, proxy, filter_webengine_output
+from . import variables, proxy, filter_webengine_output, current_window
 
 
 log_to_disk = variables.define_variable(
@@ -178,9 +178,23 @@ def init(opts):
         w.current_webview().setBuffer(buff)
         w.showMaximized()
 
+    always_restore = variables.get("always-restore-session")
     home_page = variables.get("home-page")
     session_file = a.profile.session_file
-    if home_page:
+    # NOTE: This creates two windows if a url is given in opts
+    if always_restore and os.path.exists(session_file):
+        try:
+            session_load(session_file)
+            if opts.url:
+                w = current_window()
+                buff = create_buffer(opts.url)
+                w.current_webview().setBuffer(buff)
+        except Exception:
+            if opts.url:
+                create_window(opts.url)
+            else:
+                create_window("http://duckduckgo.com/")
+    elif home_page:
         create_window(home_page)
     elif opts.url:
         create_window(opts.url)
