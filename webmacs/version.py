@@ -19,11 +19,8 @@ import logging
 import re
 import subprocess
 
-from PyQt5.QtGui import (QOpenGLContext, QOpenGLVersionProfile,
-                         QOffscreenSurface)
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWebEngineWidgets import QWebEngineProfile
-from PyQt5.QtCore import (QT_VERSION_STR, PYQT_VERSION_STR,  # noqa: F401
+from PyQt6.QtWebEngineCore import QWebEngineProfile
+from PyQt6.QtCore import (QT_VERSION_STR, PYQT_VERSION_STR,  # noqa: F401
                           QT_VERSION, PYQT_VERSION)
 from . import __version__ as WEBMACS_VERSION_STR  # noqa: F401
 
@@ -35,52 +32,6 @@ is_posix = os.name == 'posix'
 # this is required as we mock extension modules to generate the doc and
 # sometimes that needs manual work for autodoc to works well.
 building_doc = "sphinx" in sys.modules
-
-
-def opengl_vendor():  # pragma: no cover
-    """
-    Get the OpenGL vendor used.
-
-    This returns a string such as 'nouveau' or
-    'Intel Open Source Technology Center'; or None if the vendor can't be
-    determined.
-    """
-    # took from qutebrowser
-    assert QApplication.instance()
-
-    old_context = QOpenGLContext.currentContext()
-    old_surface = None if old_context is None else old_context.surface()
-
-    surface = QOffscreenSurface()
-    surface.create()
-
-    ctx = QOpenGLContext()
-    if not ctx.create():
-        logging.debug("opengl_vendor: Creating context failed!")
-        return None
-
-    if not ctx.makeCurrent(surface):
-        logging.debug("opengl_vendor: Making context current failed!")
-        return None
-
-    try:
-        if ctx.isOpenGLES():
-            # Can't use versionFunctions there
-            return None
-
-        vp = QOpenGLVersionProfile()
-        vp.setVersion(2, 0)
-
-        vf = ctx.versionFunctions(vp)
-        if vf is None:
-            logging.debug("opengl_vendor: Getting version functions failed!")
-            return None
-
-        return vf.glGetString(vf.GL_VENDOR)
-    finally:
-        ctx.doneCurrent()
-        if old_context and old_surface:
-            old_context.makeCurrent(old_surface)
 
 
 def QT_VERSION_CHECK(major, minor=0, patch=0):

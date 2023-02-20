@@ -14,26 +14,23 @@
 # along with webmacs.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-import sys
 import logging
 
-from PyQt5.QtCore import pyqtSlot as Slot, Qt
+from PyQt6.QtCore import pyqtSlot as Slot, Qt
 
-from PyQt5.QtWebEngineWidgets import QWebEngineSettings
-from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtNetwork import QNetworkAccessManager
+from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtNetwork import QNetworkAccessManager
 
-from . import require
-from . import version
-from .adblock import Adblocker, AdblockUpdateRunner, adblock_urls_rules
+from . import require, version
+from .task import TaskRunner
+from .adblock import AdBlockUpdateTask, adblock_urls_rules, AdBlock
 from .download_manager import DownloadManager
 from .profile import named_profile
 from .minibuffer.right_label import init_minibuffer_right_labels
 from .keyboardhandler import LOCAL_KEYMAP_SETTER
-from .spell_checking import SpellCheckingUpdateRunner, \
+from .spell_checking import SpellCheckingTask, \
     spell_checking_dictionaries
-from .runnable import run
 from .scheme_handlers import register_schemes
 
 
@@ -51,13 +48,7 @@ THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 class UrlInterceptor(QWebEngineUrlRequestInterceptor):
     def __init__(self, app):
         QWebEngineUrlRequestInterceptor.__init__(self)
-        if not adblock_urls_rules.value:
-            # no adblock rules, just don't create any ad-blocker
-            self._adblock = None
-        else:
-            # else create an initial ad-blocker with the current cache
-            # it might be updated later on if the cache is not up to date
-            self._adblock = Adblocker(app.adblock_path()).local_adblock()
+        self._adblock = AdBlock()
         self._use_adblock = True
 
     @Slot(object)
@@ -71,7 +62,6 @@ class UrlInterceptor(QWebEngineUrlRequestInterceptor):
         url = request.requestUrl()
         url_s = url.toString()
         if (self._use_adblock
-            and self._adblock
             and self._adblock.matches(
                 url_s,
                 request.firstPartyUrl().toString())):
@@ -117,25 +107,15 @@ class Application(QApplication):
     INSTANCE = None
 
     def __init__(self, conf_path, args, instance_name="default",
-                 profile_name="default"):
+                 profile_name="default", off_the_record=False):
         QApplication.__init__(self, args)
         self.__class__.INSTANCE = self
         self.instance_name = instance_name
-
-        if (version.opengl_vendor() == 'nouveau' and
-            not (os.environ.get('LIBGL_ALWAYS_SOFTWARE') == '1'
-                 or 'QT_XCB_FORCE_SOFTWARE_OPENGL' in os.environ)):
-            sys.exit(
-                "You are using the nouveau graphics driver but it"
-                " has issues with multithreaded opengl. You must"
-                " use another driver or set the variable environment"
-                " QT_XCB_FORCE_SOFTWARE_OPENGL to force software"
-                " opengl. Note that it might be slow, depending"
-                " on your hardware."
-            )
+        self.task_runner = TaskRunner()
 
         if version.is_mac:
-            self.setAttribute(Qt.AA_MacDontSwapCtrlAndMeta)
+            self.setAttribute(
+                Qt.ApplicationAttribute.AA_MacDontSwapCtrlAndMeta)
 
         register_schemes()
 
@@ -147,32 +127,16 @@ class Application(QApplication):
 
         self._download_manager = DownloadManager(self)
 
-        self.profile = named_profile(profile_name)
-        self.profile.enable(self)
-
-        settings = QWebEngineSettings.globalSettings()
-        settings.setAttribute(
-            QWebEngineSettings.LinksIncludedInFocusChain, False,
-        )
-        settings.setAttribute(
-            QWebEngineSettings.PluginsEnabled, True,
-        )
-        settings.setAttribute(
-            QWebEngineSettings.FullScreenSupportEnabled, True,
-        )
-        settings.setAttribute(
-            QWebEngineSettings.JavascriptCanOpenWindows, True,
-        )
-        if version.min_qt_version >= (5, 8):
-            settings.setAttribute(
-                QWebEngineSettings.FocusOnNavigationEnabled, False,
-            )
+        self.profile = named_profile(profile_name,
+                                     off_the_record=off_the_record)
 
         self.installEventFilter(LOCAL_KEYMAP_SETTER)
 
         self.setQuitOnLastWindowClosed(False)
 
         self.network_manager = QNetworkAccessManager(self)
+
+        self.aboutToQuit.connect(self.task_runner.stop)
 
     def conf_path(self):
         return self._conf_path
@@ -192,9 +156,6 @@ class Application(QApplication):
     def features(self):
         return self.profile.features
 
-    def autofill(self):
-        return self.profile.autofill
-
     def url_interceptor(self):
         return self._interceptor
 
@@ -208,28 +169,28 @@ class Application(QApplication):
         if not adblock_urls_rules.value:
             return
 
-        def adblock_thread_finished(error, adblock):
+        task = AdBlockUpdateTask(self, self.adblock_path())
+
+        def adblock_finished():
+            adblock = task.adblock()
             if adblock:
                 self._interceptor.update_adblock(adblock)
 
-        generator = Adblocker(self.adblock_path())
-        runner = AdblockUpdateRunner(generator,
-                                     on_finished=adblock_thread_finished)
-        run(runner)
+        task.finished.connect(adblock_finished)
+        self.task_runner.run(task)
 
     def update_spell_checking(self):
         if not bool(spell_checking_dictionaries.value):
             return
 
-        spell_check_path = os.path.join(self.applicationDirPath(),
-                                        "qtwebengine_dictionaries")
+        spell_check_path = os.path.join(self._conf_path, "spell_checking")
 
         def spc_finished(*a):
             self.profile.update_spell_checking()
 
-        runner = SpellCheckingUpdateRunner(spell_check_path,
-                                           on_finished=spc_finished)
-        run(runner)
+        task = SpellCheckingTask(self, spell_check_path)
+        task.finished.connect(spc_finished)
+        self.task_runner.run(task)
 
     def post_init(self):
         self.adblock_update()

@@ -13,8 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with webmacs.  If not, see <http://www.gnu.org/licenses/>.
 
-from PyQt5.QtWidgets import QLayout
-from PyQt5.QtCore import QRect, QSize
+from PyQt6.QtWidgets import QLayout
+from PyQt6.QtCore import QRect, QSize
 
 from . import call_later, BUFFERS
 from .webview import WebView
@@ -59,15 +59,15 @@ class LayoutEntry(object):
 
         elif self.split == ViewGridLayout.VERTICAL:
             x = rect.x()
-            width = rect.width() // len(self.children)
+            width = round(rect.width() / len(self.children))
             for child in self.children:
-                cr = QRect(x, rect.y(), width, rect.height())
+                cr = QRect(x, rect.y(), width, int(rect.height()))
                 child.set_geometry(cr)
                 x += width
 
         elif self.split == ViewGridLayout.HORIZONTAL:
             y = rect.y()
-            height = rect.height() // len(self.children)
+            height = round(rect.height() / len(self.children))
             for child in self.children:
                 cr = QRect(rect.x(), y, rect.width(), height)
                 child.set_geometry(cr)
@@ -239,4 +239,4 @@ class ViewGridLayout(QLayout):
             w.show_focused(w == self._current_view)
 
         # required to have the right keyboard focus
-        self._current_view.set_current()
+        main_view.main_window.set_current_webview(main_view)

@@ -17,11 +17,11 @@ import os
 import itertools
 import collections
 
-from PyQt5.QtCore import QObject, QAbstractTableModel, QModelIndex, Qt, \
+from PyQt6.QtCore import QObject, QAbstractTableModel, QModelIndex, Qt, \
     pyqtSlot as Slot, pyqtSignal as Signal, QEventLoop, QPropertyAnimation, \
-    QEvent, QRegExp
+    QEvent, QRegularExpression
 
-from PyQt5.QtGui import QColor, QRegExpValidator
+from PyQt6.QtGui import QColor, QRegularExpressionValidator
 
 from ..keyboardhandler import set_global_keymap_enabled
 from ..keymaps import Keymap
@@ -68,8 +68,8 @@ class FSModel(QAbstractTableModel):
     def columnCount(self, index=QModelIndex()):
         return 1
 
-    def data(self, index, role=Qt.DisplayRole):
-        if role != Qt.DisplayRole:
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if role != Qt.ItemDataRole.DisplayRole:
             return None
 
         try:
@@ -108,8 +108,8 @@ class PromptTableModel(QAbstractTableModel):
             return len(self._data[0])
         return 0
 
-    def data(self, index, role=Qt.DisplayRole):
-        if role != Qt.DisplayRole:
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if role != Qt.ItemDataRole.DisplayRole:
             return None
 
         return index.internalPointer()
@@ -123,7 +123,7 @@ class PromptTableModel(QAbstractTableModel):
 
 def _prompt_exec(prompt, loop):
     # mocked in tests to not block.
-    loop.exec_()
+    loop.exec()
 
 
 class Prompt(QObject):
@@ -203,7 +203,7 @@ class Prompt(QObject):
             self.__flash = self._create_flash_animation()
             if self.__flash:
                 self.__flash.start()
-        elif self.__flash.state() == self.__flash.Stopped:
+        elif self.__flash.state() == self.__flash.State.Stopped:
             self.__flash.start()
 
     def _create_flash_animation(self):
@@ -253,7 +253,7 @@ class Prompt(QObject):
         self.__finished = True
         self.finished.emit()
 
-    def exec_(self, minibuffer, flash=False, sync=True):
+    def exec(self, minibuffer, flash=False, sync=True):
         self.enable(minibuffer)
         if flash:
             self.flash()
@@ -356,7 +356,7 @@ class YesNoPrompt(Prompt):
         Prompt.enable(self, minibuffer)
         buffer_input = minibuffer.input()
 
-        validator = QRegExpValidator(QRegExp(
+        validator = QRegularExpressionValidator(QRegularExpression(
             "[" + self.valid_keys + "]"), buffer_input)
         buffer_input.setValidator(validator)
         minibuffer.input().installEventFilter(self)
@@ -379,8 +379,8 @@ class YesNoPrompt(Prompt):
         return self._value
 
     def eventFilter(self, obj, evt):
-        if evt.type() in (QEvent.KeyPress, QEvent.KeyRelease,
-                          QEvent.ShortcutOverride):
+        if evt.type() in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease,
+                          QEvent.Type.ShortcutOverride):
             if evt.text() in self.valid_keys:
                 return False
             evt.accept()
@@ -392,3 +392,24 @@ class YesNoPrompt(Prompt):
         self.minibuffer.input().removeEventFilter(self)
         set_global_keymap_enabled(True)
         Prompt.close(self)
+
+
+class AskPasswordPrompt(Prompt):
+    def __init__(self, buffer):
+        Prompt.__init__(self, None)
+        self.buffer = buffer
+        self.username, self.password = "", ""
+        self.label = "username: "
+        set_global_keymap_enabled(False)
+
+    def _on_edition_finished(self):
+        input = self.minibuffer.input()
+        if not self.username:
+            self.username = input.text()
+            input.clear()
+            input.setEchoMode(input.EchoMode.Password)
+            self.minibuffer.label.setText("password: ")
+        else:
+            self.password = input.text()
+            Prompt._on_edition_finished(self)
+            set_global_keymap_enabled(True)

@@ -14,7 +14,8 @@
 # along with webmacs.  If not, see <http://www.gnu.org/licenses/>.
 
 import sqlite3
-from PyQt5.QtWebEngineWidgets import QWebEnginePage
+import logging
+from PyQt6.QtWebEngineCore import QWebEnginePage
 
 
 class Features(object):
@@ -29,18 +30,25 @@ class Features(object):
         """)
 
     def set_permission(self, url, feature, permission):
+        logging.info(f"[{url}]: Saving {feature} to {permission}")
         self._conn.execute("""
         INSERT OR REPLACE INTO features (url, feature, permission)
         VALUES (?, ?, ?)
-        """, (url, feature, permission))
+        """, (url, feature.value, permission.value))
         self._conn.commit()
 
     def get_permission(self, url, feature):
-        permission = self._conn.execute(
+        permission_value = self._conn.execute(
             "SELECT permission FROM features WHERE url = ? AND feature = ?",
-            (url, feature)).fetchone()
+            (url, feature.value)).fetchone()
 
-        if permission:
-            return permission[0]
+        permission = QWebEnginePage.PermissionPolicy.PermissionUnknown
+        if permission_value:
+            for p in QWebEnginePage.PermissionPolicy:
+                if p.value == permission_value[0]:
+                    permission = p
+                    logging.info(f"[{url}]: Found permission {permission} for {feature}")
+                    break
         else:
-            return QWebEnginePage.PermissionUnknown
+            logging.info(f"[{url}] No permission found for {feature}")
+        return permission

@@ -17,9 +17,9 @@ import os
 import json
 import struct
 import logging
-from PyQt5.QtCore import QObject, pyqtSlot as Slot, pyqtSignal as Signal, Qt, \
+from PyQt6.QtCore import QObject, pyqtSlot as Slot, pyqtSignal as Signal, Qt, \
     QDir
-from PyQt5.QtNetwork import QLocalServer, QLocalSocket
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from . import version
 
 
@@ -75,9 +75,12 @@ class IPcReader(QObject):
 class IpcServer(QObject):
     @classmethod
     def get_sock_name(cls, instance):
+        run_path = f"/run/user/{os.getuid()}"
+        prefix = run_path if os.access(run_path, os.W_OK) else ""
+
         if instance == "default":
-            return "webmacs.ipc"
-        return "webmacs.{}.ipc".format(instance)
+            return os.path.join(prefix, "webmacs.ipc")
+        return os.path.join(prefix, f"webmacs.{instance}.ipc")
 
     @classmethod
     def list_all_instances(cls, check=True):
@@ -132,6 +135,8 @@ class IpcServer(QObject):
         sock_name = self.get_sock_name(instance)
         QLocalServer.removeServer(sock_name)
         self._server = QLocalServer()
+        self._server.setSocketOptions(
+            QLocalServer.SocketOption.UserAccessOption)
         self._server.newConnection.connect(self._on_new_connection)
         if not self._server.listen(sock_name):
             logging.error("Can not start ipc: %s"
@@ -185,7 +190,7 @@ def ipc_dispatch(data):
     # this is quite hard to raise a window. The following works fine
     # for me with gnome 3.
     flags = win.windowFlags()
-    win.setWindowFlags(flags | Qt.Popup)
+    win.setWindowFlags(flags | Qt.WindowType.Popup)
     win.raise_()
     win.activateWindow()
     win.setWindowFlags(flags)

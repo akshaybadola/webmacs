@@ -17,9 +17,9 @@ import logging
 import time
 import json
 
-from PyQt5.QtCore import QUrl, pyqtSlot as Slot
-from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineScript
-from PyQt5.QtWebChannel import QWebChannel
+from PyQt6.QtCore import QUrl, pyqtSlot as Slot
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineScript
+from PyQt6.QtWebChannel import QWebChannel
 from collections import namedtuple
 
 from . import hooks, variables, windows
@@ -27,9 +27,8 @@ from . import BUFFERS, current_minibuffer, minibuffer_show_info, \
     current_buffer, call_later, current_window, recent_buffers
 from .content_handler import WebContentHandler
 from .application import app
-from .minibuffer.prompt import YesNoPrompt
-from .autofill import FormData
-from .autofill.prompt import AskPasswordPrompt, SavePasswordPrompt
+from .minibuffer.prompt import YesNoPrompt, AskPasswordPrompt
+from .password_manager import PasswordManagerNotReady
 from .keyboardhandler import LOCAL_KEYMAP_SETTER
 from .mode import get_mode, Mode, get_auto_modename_for_url
 
@@ -82,8 +81,6 @@ def close_buffer(wb):
     if internal_view:
         # remove the associated internal page view (might be causing a crash
         # from when calling ~QWebEnginePage())
-        wb.setView(None)
-        internal_view.detach()
         internal_view.deleteLater()
 
     # clear the web channel. Might be causing a crash when calling
@@ -103,10 +100,11 @@ class WebBuffer(QWebEnginePage):
     """
 
     LOGGER = logging.getLogger("webcontent")
+    JSMessageLevel = QWebEnginePage.JavaScriptConsoleMessageLevel
     JSLEVEL2LOGGING = {
-        QWebEnginePage.InfoMessageLevel: logging.INFO,
-        QWebEnginePage.WarningMessageLevel: logging.WARNING,
-        QWebEnginePage.ErrorMessageLevel: logging.ERROR,
+        JSMessageLevel.InfoMessageLevel: logging.INFO,
+        JSMessageLevel.WarningMessageLevel: logging.WARNING,
+        JSMessageLevel.ErrorMessageLevel: logging.ERROR,
     }
 
     def __init__(self, url=None):
@@ -116,7 +114,7 @@ class WebBuffer(QWebEnginePage):
         :param url: the url to use for the buffer. Must be an instance of QUrl,
             an str or None to not load any url.
         """
-        QWebEnginePage.__init__(self)
+        QWebEnginePage.__init__(self, app().profile.q_profile, None)
         self.last_use = time.time()
         cb = current_buffer()
         if cb:
@@ -132,17 +130,17 @@ class WebBuffer(QWebEnginePage):
         channel.registerObject("contentHandler", self._content_handler)
 
         self.setWebChannel(channel,
-                           QWebEngineScript.ApplicationWorld)
+                           QWebEngineScript.ScriptWorldId.ApplicationWorld)
 
         self.loadFinished.connect(self.finished)
         self.authenticationRequired.connect(self.handle_authentication)
         self.linkHovered.connect(self.on_url_hovered)
-        self.titleChanged.connect(self.update_title)
-        self.__authentication_data = None
+        self.titleChanged.connect(self.__on_title_changed)
         self.__delay_loading_url = None
         self.__keymap_mode = Mode.KEYMAP_NORMAL
         self.__mode = get_mode("standard-mode")
         self.__text_edit_mark = False
+        self._internal_view = None
 
         if url:
             if isinstance(url, DelayedLoadingUrl):
@@ -151,11 +149,11 @@ class WebBuffer(QWebEnginePage):
                 self.load(url)
 
     def internal_view(self):
-        return QWebEnginePage.view(self)
+        return self._internal_view
 
     def view(self):
-        iv = self.internal_view()
-        if iv:
+        iv = self._internal_view
+        if iv and iv.isVisible():
             return iv.view()
 
     @property
@@ -230,32 +228,32 @@ class WebBuffer(QWebEnginePage):
         self.runJavaScript(
             "hints.selectBrowserObjects(%r, %r, %r);"
             % (selector, method, json.dumps(method_options)),
-            QWebEngineScript.ApplicationWorld)
+            QWebEngineScript.ScriptWorldId.ApplicationWorld)
 
     def stop_select_browser_objects(self):
         self.runJavaScript(
             "hints.clearBrowserObjects();",
-            QWebEngineScript.ApplicationWorld)
+            QWebEngineScript.ScriptWorldId.ApplicationWorld)
 
     def select_next_browser_object(self, forward=True):
         self.runJavaScript(
             "hints.activateNextHint(%s);" % ("false" if forward else "true",),
-            QWebEngineScript.ApplicationWorld)
+            QWebEngineScript.ScriptWorldId.ApplicationWorld)
 
     def filter_browser_objects(self, text):
         self.runJavaScript(
             "hints.filterSelection(%r);" % text,
-            QWebEngineScript.ApplicationWorld)
+            QWebEngineScript.ScriptWorldId.ApplicationWorld)
 
     def focus_active_browser_object(self):
         self.runJavaScript(
             "hints.followCurrentLink();",
-            QWebEngineScript.ApplicationWorld)
+            QWebEngineScript.ScriptWorldId.ApplicationWorld)
 
     def select_visible_hint(self, hint_id):
         self.runJavaScript(
             "hints.selectVisibleHint(%r);" % hint_id,
-            QWebEngineScript.ApplicationWorld)
+            QWebEngineScript.ScriptWorldId.ApplicationWorld)
 
     @Slot("QWebEngineFullScreenRequest")
     def _on_full_screen_requested(self, request):
@@ -267,41 +265,26 @@ class WebBuffer(QWebEnginePage):
 
     @Slot(QUrl, QWebEnginePage.Feature)
     def _on_feature_requested(self, url, feature):
-        features = ("Geolocation", "MediaAudioCapture", "MediaVideoCapture",
-                    "MediaAudioVideoCapture", "MouseLock",
-                    "DesktopVideoCapture", "DesktopAudioVideoCapture")
+        permission_db = app().features()
 
-        feature_name = None
-        for name in features:
-            if getattr(QWebEnginePage, name, None) == feature:
-                feature_name = name
-                break
+        permission = permission_db.get_permission(url.host(), feature)
 
-        db = app().features()
+        if permission == QWebEnginePage.PermissionPolicy.PermissionUnknown:
+            prompt = YesNoPrompt("Allow enabling feature {} for {}?"
+                                 .format(feature.name, url.toString()),
+                                 always=True,
+                                 never=True)
+            answer = current_minibuffer().do_prompt(prompt, flash=True)
 
-        permission = db.get_permission(url.host(), feature)
+            if answer in (YesNoPrompt.YES, YesNoPrompt.ALWAYS):
+                permission = QWebEnginePage.PermissionPolicy.PermissionGrantedByUser
+            elif answer in (YesNoPrompt.NO, YesNoPrompt.NEVER):
+                permission = QWebEnginePage.PermissionPolicy.PermissionDeniedByUser
+            else:
+                permission = QWebEnginePage.PermissionPolicy.PermissionUnknown
 
-        if permission == QWebEnginePage.PermissionUnknown:
-            permission = QWebEnginePage.PermissionDeniedByUser
-            if feature_name:
-                prompt = YesNoPrompt("Allow enabling feature {} for {}?"
-                                     .format(feature_name,
-                                             url.toString()),
-                                     always=True,
-                                     never=True)
-                answer = current_minibuffer().do_prompt(prompt, flash=True)
-
-                if answer in (YesNoPrompt.YES, YesNoPrompt.ALWAYS):
-                    permission = QWebEnginePage.PermissionGrantedByUser
-                elif answer in (YesNoPrompt.NO, YesNoPrompt.NEVER):
-                    permission = QWebEnginePage.PermissionDeniedByUser
-                else:
-                    permission = QWebEnginePage.PermissionUnknown
-
-                if answer in (YesNoPrompt.ALWAYS, YesNoPrompt.NEVER):
-                    app().features().set_permission(url.host(),
-                                                    feature,
-                                                    permission)
+            if answer in (YesNoPrompt.ALWAYS, YesNoPrompt.NEVER):
+                permission_db.set_permission(url.host(), feature, permission)
 
         self.setFeaturePermission(url, feature, permission)
 
@@ -322,16 +305,6 @@ class WebBuffer(QWebEnginePage):
         if url.isValid() and not url.scheme() == "webmacs":
             app().visitedlinks().visit(url.toString(), self.title())
 
-        autofill = app().autofill()
-        if self.__authentication_data:
-            # save authentication data
-            sprompt = SavePasswordPrompt(autofill, self,
-                                         self.__authentication_data)
-            self.__authentication_data = None
-            current_minibuffer().do_prompt(sprompt, flash=True)
-        else:
-            autofill.complete_buffer(self, url)
-
         self.set_mode(get_auto_modename_for_url(self.url().toString()))
 
         hooks.webbuffer_load_finished(self)
@@ -346,22 +319,23 @@ class WebBuffer(QWebEnginePage):
             view.internal_view().setFocus()
 
     def handle_authentication(self, url, authenticator):
-        autofill = app().autofill()
-        passwords = autofill.auth_passwords_for_url(url)
-        if passwords:
-            data = passwords[0]
-            authenticator.setUser(data.username)
-            authenticator.setPassword(data.password)
+        password_manager = app().profile.password_manager
+        try:
+            credential = password_manager.credential_for_url(url.toString())
+        except PasswordManagerNotReady:
+            credential = None
+
+        if credential:
+            authenticator.setUser(credential.username)
+            authenticator.setPassword(credential.password)
             return
 
         # ask authentication credentials
-        prompt = AskPasswordPrompt(autofill, self)
+        prompt = AskPasswordPrompt(self)
         current_minibuffer().do_prompt(prompt, flash=True)
 
-        data = self.__authentication_data = FormData(url, prompt.username,
-                                                     prompt.password, None)
-        authenticator.setUser(data.username)
-        authenticator.setPassword(data.password)
+        authenticator.setUser(prompt.username)
+        authenticator.setPassword(prompt.password)
 
     def certificateError(self, error):
         url = "{}:{}".format(error.url().host(), error.url().port(80))
@@ -395,14 +369,6 @@ class WebBuffer(QWebEnginePage):
         if view:
             return view.main_window
 
-    def update_title(self, title=None):
-        if self == current_buffer():
-            mw = self.main_window()
-            if mw is not None:
-                mw.update_title(
-                    title if title is not None else self.title()
-                )
-
     def _incr_zoom(self, forward):
         # Zooming constants
         ZOOM_MIN = 25
@@ -429,6 +395,11 @@ class WebBuffer(QWebEnginePage):
 
     def zoom_normal(self):
         self.set_zoom(100)
+
+    @Slot(str)
+    def __on_title_changed(self, title):
+        if self.view():
+            self.view().main_window.update_title(title)
 
 
 # alias to create a web buffer

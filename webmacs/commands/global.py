@@ -15,14 +15,16 @@
 
 import itertools
 import os
-from PyQt5.QtCore import QStringListModel, QModelIndex
+import sys
+from PyQt6.QtCore import QStringListModel, QModelIndex, QProcess
 
 from . import define_command, COMMANDS, register_prompt_opener_commands
 from ..minibuffer import Prompt
 from ..minibuffer.prompt import PromptTableModel, PromptHistory
 from ..application import app
 from ..webbuffer import create_buffer
-from ..keymaps import KeyPress, VISITEDLINKS_KEYMAP, BOOKMARKS_KEYMAP, KEYMAPS
+from ..keymaps import KeyPress, VISITEDLINKS_KEYMAP, BOOKMARKS_KEYMAP, \
+    KEYMAPS, GLOBAL_KEYMAP
 from ..keyboardhandler import send_key_event, local_keymap, KEY_EATER, \
     CallHandler
 from .. import BUFFERS, windows, variables
@@ -30,6 +32,7 @@ from ..mode import MODES
 from ..window import Window
 from ..session import session_clean, session_load
 from ..ipc import IpcServer
+from ..url_opener import url_open
 
 
 class CommandsListPrompt(Prompt):
@@ -40,10 +43,26 @@ class CommandsListPrompt(Prompt):
     }
     history = PromptHistory()
 
+    def __init__(self, ctx, local_keymap=None):
+        Prompt.__init__(self, ctx)
+        self.__local_keymap = local_keymap
+
     def completer_model(self):
-        model = QStringListModel(self)
-        model.setStringList(sorted(k for k, v in COMMANDS.items()
-                                   if v.visible))
+        if self.__local_keymap:
+            bindings = {}
+            def add(prefix, cmd, parent):
+                bindings[cmd] = " ".join(str(k) for k in prefix)
+            # add bindings from currently active keymaps: global and the local
+            # one, registered before opening the minibuffer.
+            GLOBAL_KEYMAP.traverse_commands(add)
+            self.__local_keymap.traverse_commands(add)
+
+            data = [(k, bindings.get(k, ""))
+                    for k, v in COMMANDS.items() if v.visible]
+        else:
+            data = [(k,) for k, v in COMMANDS.items() if v.visible]
+
+        model = PromptTableModel(data, self)
         return model
 
 
@@ -60,7 +79,7 @@ def commands(ctx):
     """
     Prompt for a command name to execute.
     """
-    prompt = CommandsListPrompt(ctx)
+    prompt = CommandsListPrompt(ctx, local_keymap())
     value = ctx.minibuffer.do_prompt(prompt)
     try:
         COMMANDS[value](ctx)
@@ -127,7 +146,7 @@ def split_window_right(ctx):
     win = ctx.window
     view = win.create_webview_on_right()
     view.setBuffer(_get_or_create_buffer(win))
-    view.set_current()
+    win.set_current_webview(view)
 
 
 @define_command("split-view-bottom")
@@ -138,7 +157,7 @@ def split_window_bottom(ctx):
     win = ctx.window
     view = win.create_webview_on_bottom()
     view.setBuffer(_get_or_create_buffer(win))
-    view.set_current()
+    win.set_current_webview(view)
 
 
 @define_command("make-window")
@@ -408,22 +427,12 @@ def send_left(ctx):
     send_key_event(KeyPress.from_str("Left"))
 
 
-def _open_url(ctx, url):
-    if ctx.current_prefix_arg == (4,):
-        buffer = create_buffer()
-        ctx.current_view.setBuffer(buffer)
-    else:
-        buffer = ctx.buffer
-
-    buffer.load(url)
-
-
 @define_command("describe-bindings")
 def describe_bindings(ctx):
     """
     Display current bindings in the current buffer or in a new buffer.
     """
-    _open_url(ctx, "webmacs://bindings")
+    url_open(ctx, "webmacs://bindings", new_buffer=ctx.current_prefix_arg == (4,))
 
 
 @define_command("describe-commands")
@@ -431,7 +440,7 @@ def describe_commands(ctx):
     """
     Display commands in the current buffer or in a new buffer.
     """
-    _open_url(ctx, "webmacs://commands")
+    url_open(ctx, "webmacs://commands", new_buffer=ctx.current_prefix_arg == (4,))
 
 
 @define_command("describe-variables")
@@ -439,7 +448,7 @@ def describe_variables(ctx):
     """
     Display variables in the current buffer or in a new buffer.
     """
-    _open_url(ctx, "webmacs://variables")
+    url_open(ctx, "webmacs://variables", new_buffer=ctx.current_prefix_arg == (4,))
 
 
 @define_command("downloads")
@@ -447,7 +456,7 @@ def downloads(ctx):
     """
     Display information about the current downloads.
     """
-    _open_url(ctx, "webmacs://downloads")
+    url_open(ctx, "webmacs://downloads", new_buffer=ctx.current_prefix_arg == (4,))
 
 
 @define_command("version")
@@ -455,7 +464,7 @@ def version(ctx):
     """
     Display version information.
     """
-    _open_url(ctx, "webmacs://version")
+    url_open(ctx, "webmacs://version", new_buffer=ctx.current_prefix_arg == (4,))
 
 
 class VariableListPrompt(Prompt):
@@ -495,8 +504,7 @@ def describe_command(ctx):
     """
     command = ctx.minibuffer.do_prompt(DescribeCommandsListPrompt(ctx))
     if command in COMMANDS:
-        buffer = create_buffer("webmacs://command/%s" % command)
-        ctx.view.setBuffer(buffer)
+        url_open(ctx, "webmacs://command/%s" % command)
 
 
 class ReportCallHandler(CallHandler):
@@ -561,7 +569,7 @@ def describe_binding(ctx):
         url = "webmacs://key/{key}?command={command}&keymap={keymap}".format(
             **called_with
         )
-        ctx.view.setBuffer(create_buffer(url))
+        url_open(ctx, url, new_buffer=True)
 
 
 @define_command("describe-key-briefly")
@@ -662,3 +670,22 @@ def current_instance(ctx):
     Show the current instance name.
     """
     ctx.minibuffer.show_info("Current instance name: %s" % app().instance_name)
+
+
+@define_command("is-off-the-record")
+def is_off_the_record(ctx):
+    """
+    Print wether browsing is off the record.
+    """
+    ctx.minibuffer.show_info(
+        f"Is off the record: {app().profile.is_off_the_record()}")
+
+@define_command("open-off-the-record")
+def open_off_the_record(ctx):
+    """
+    Opens a new webmacs instance with off-the-record enabled.
+    """
+    proc = QProcess()
+    proc.setProgram(sys.argv[0])
+    proc.setArguments(["--off-the-record", "--instance", ""])
+    proc.startDetached()
