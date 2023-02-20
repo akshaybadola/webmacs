@@ -500,7 +500,6 @@ def describe_command(ctx):
 
 
 class ReportCallHandler(CallHandler):
-
     def __init__(self, prompt):
         CallHandler.__init__(self)
         self.prompt = prompt

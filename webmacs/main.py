@@ -38,6 +38,14 @@ log_to_disk = variables.define_variable(
 )
 
 
+log_to_disk_persist = variables.define_variable(
+    "log-to-disk-persist",
+    "Persistent logging instead of a new log file being generated at each instance init",
+    False,
+    type=variables.Bool(),
+)
+
+
 def signal_wakeup(app):
     """
     Allow to be notified in Python for signals when in long-running calls from
@@ -101,7 +109,8 @@ def setup_logging_on_disk(log_dir, backup_count=5):
                                   backupCount=backup_count,
                                   delay=True)
     handler.setFormatter(Formatter())
-    handler.doRollover()
+    if log_to_disk_persist:
+        handler.doRollover()
     handler.setLevel(logging.DEBUG)
 
     for logger in (root, webcontent):
@@ -244,7 +253,6 @@ else:
 
 def main():
     opts, user_opts = parse_args()
-
     if opts.list_instances:
         for instance in IpcServer.list_all_instances():
             print(instance)
