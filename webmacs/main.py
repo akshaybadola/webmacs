@@ -219,8 +219,8 @@ def init(opts):
             session_load(session_file)
         except Exception:
             logging.exception("Unable to load session from '%s'", session_file)
-
-    create_window("about:blank")
+    else:
+        create_window("about:blank")
 
 
 def _handle_user_init_error(conf_path, msg):
