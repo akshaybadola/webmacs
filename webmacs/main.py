@@ -198,7 +198,7 @@ def init(opts):
     home_page = variables.get("home-page")
     session_file = a.profile.session_file
     # NOTE: This creates two windows if a url is given in opts
-    if always_restore and os.path.exists(session_file):
+    if session_file and always_restore and os.path.exists(session_file):
         try:
             session_load(session_file)
             if opts.url:
@@ -214,13 +214,13 @@ def init(opts):
         create_window(home_page)
     elif opts.url:
         create_window(opts.url)
-    elif os.path.exists(session_file):
+    elif session_file and os.path.exists(session_file):
         try:
             session_load(session_file)
         except Exception:
             logging.exception("Unable to load session from '%s'", session_file)
-
-    create_window("about:blank")
+    else:
+        create_window("about:blank")
 
 
 def _handle_user_init_error(conf_path, msg):
@@ -232,8 +232,7 @@ def _handle_user_init_error(conf_path, msg):
         if t[0].startswith(conf_path):
             stack_size = -len(tbs[i:])
             break
-    logging.critical(("%s\n\n" % msg)
-                     + traceback.format_exc(stack_size))
+    logging.critical("%s\n\n%s" % (msg, traceback.format_exc(stack_size)))
     sys.exit(1)
 
 
