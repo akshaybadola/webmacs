@@ -1,7 +1,7 @@
 import logging
 
-from PyQt5.QtNetwork import QNetworkProxy, QNetworkProxyFactory
-from PyQt5.QtCore import QUrl
+from PyQt6.QtNetwork import QNetworkProxy, QNetworkProxyFactory
+from PyQt6.QtCore import QUrl
 
 from . import variables
 
@@ -106,7 +106,7 @@ class ProxyFactory(QNetworkProxyFactory):
             proxies = [self.CUSTOM_PROXY]
 
         for p in proxies:
-            if p.type() != QNetworkProxy.NoProxy:
+            if p.type() != QNetworkProxy.ProxyType.NoProxy:
                 capabilities = p.capabilities()
                 if proxy_dns_requests.value:
                     capabilities |= QNetworkProxy.HostNameLookupCapability
