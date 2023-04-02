@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Fixed
+
+- Cookies and persistent data is now really saved on disk, and used on restart.
+- Fixed a possible security issue of the webmacs.ipc file that was readable and
+  writable by others.
+- adblock url fetching and parsing is now more verbose on error and more
+  resilient.
+- Fixed text selection within iframes.
+- Fixed minibuffer line input redo binding.
+- Fixed exiting webmacs as fast as possible by rewriting long-running tasks
+  asynchronously.
+
+
+### Added
+
+- Added passwordstore support for storing passwords (the linux 'pass' command
+  line tool)
+- Added **content-edit-select-all** in content edit mode, bound to **C-x h**.
+- Added **minibuffer-select-all** in minibuffer keymap, bound to **C-x h**.
+- Added bindings currently attached to commands when using **M-x** command.
+- Added support for an off-the-record (private) mode. It is enabled by starting
+  webmacs using **--off-the-record** flag, or using the command
+  **open-off-the-record**.
+
+### Changed
+
+- Moved codebase to PyQt6. PyQt5 is no longer supported.
+- Removed support for an internal database to store passwords.
+- Moved path to the spell checking data (to ~/.webmacs/spell_checking/)
+
 ## [0.8] - 2019-09-15
 
 ### Fixed

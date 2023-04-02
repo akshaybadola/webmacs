@@ -22,7 +22,7 @@ import atexit
 import os
 import warnings
 
-from PyQt5.QtNetwork import QAbstractSocket
+from PyQt6.QtNetwork import QAbstractSocket
 
 from .ipc import IpcServer
 from . import variables, proxy, filter_webengine_output, current_window
@@ -49,11 +49,11 @@ log_to_disk_persist = variables.define_variable(
 def signal_wakeup(app):
     """
     Allow to be notified in Python for signals when in long-running calls from
-    the C or c++ side, like QApplication.exec_().
+    the C or c++ side, like QApplication.exec().
 
     See https://stackoverflow.com/a/37229299.
     """
-    sock = QAbstractSocket(QAbstractSocket.UdpSocket, app)
+    sock = QAbstractSocket(QAbstractSocket.SocketType.UdpSocket, app)
     # Create a socket pair
     sock.wsock, sock.rsock = socket.socketpair(type=socket.SOCK_DGRAM)
     # Let Qt listen on the one end
@@ -147,6 +147,9 @@ def parse_args(argv=None):
     parser.add_argument("--list-instances", action="store_true",
                         help="List running instances and exit.")
 
+    parser.add_argument("--off-the-record", action="store_true",
+                        help="Private browsing mode.")
+
     parser.add_argument("url", nargs="?",
                         help="url to open")
 
@@ -210,6 +213,7 @@ def init(opts):
     elif os.path.exists(session_file):
         try:
             session_load(session_file)
+            return
         except Exception:
             create_window("http://duckduckgo.com/")
 
@@ -298,12 +302,15 @@ def main():
             "Error reading the user configuration."
         )
 
+    os.environ["QTWEBENGINE_DICTIONARIES_PATH"] = os.path.join(conf_path,
+                                                               "spell_checking")
     app = Application(conf_path, [
         # The first argument passed to the QApplication args defines
         # the x11 property WM_CLASS.
         "webmacs" if opts.instance == "default"
         else "webmacs-%s" % opts.instance
-    ], instance_name=opts.instance, profile_name=opts.profile)
+    ], instance_name=opts.instance, profile_name=opts.profile,
+                      off_the_record=opts.off_the_record)
     server = IpcServer(opts.instance)
     atexit.register(server.cleanup)
 
@@ -325,13 +332,13 @@ def main():
                 % user_init.__file__
             )
 
-    if log_to_disk.value > 0:
+    if log_to_disk.value > 0 and not opts.off_the_record:
         setup_logging_on_disk(os.path.join(conf_path, "logs"),
                               backup_count=log_to_disk.value)
     app.post_init()
     signal_wakeup(app)
     signal.signal(signal.SIGINT, lambda s, h: app.quit())
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == '__main__':

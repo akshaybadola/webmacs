@@ -3,8 +3,8 @@ import os
 import time
 import subprocess
 
-from PyQt5.QtTest import QTest
-from PyQt5.QtCore import QEvent, QTimer
+from PyQt6.QtTest import QTest
+from PyQt6.QtCore import QEvent, QTimer
 
 from webmacs.application import Application, _app_requires
 from webmacs import (windows, buffers, WINDOWS_HANDLER, current_buffer,
@@ -201,8 +201,8 @@ class TestSession(object):
         widget = widget or self.qapp.focusWindow()
         keys = [KeyPress.from_str(k) for k in shortcut.split()]
         for key in keys:
-            evt = key.to_qevent(QEvent.KeyPress)
-            self.keyclick(evt.key(), modifier=evt.modifiers())
+            evt = key.to_qevent(QEvent.Type.KeyPress)
+            self.keyclick(key.key, modifier=evt.modifiers())
 
 
 class Waiter(object):

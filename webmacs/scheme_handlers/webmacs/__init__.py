@@ -19,8 +19,8 @@ import re
 import importlib
 import inspect
 from itertools import groupby
-from PyQt5.QtCore import QBuffer, QFile, QUrlQuery
-from PyQt5.QtWebEngineCore import QWebEngineUrlSchemeHandler
+from PyQt6.QtCore import QBuffer, QFile, QUrlQuery
+from PyQt6.QtWebEngineCore import QWebEngineUrlSchemeHandler
 from jinja2 import Environment, PackageLoader
 from ... import version, COMMANDS
 from ...variables import VARIABLES
@@ -95,7 +95,6 @@ class WebmacsSchemeHandler(QWebEngineUrlSchemeHandler):
                 ("Qt version", version.QT_VERSION_STR),
                 ("PyQt version", version.PYQT_VERSION_STR),
                 ("Chromium version", version.chromium_version()),
-                ("Opengl vendor", version.opengl_vendor()),
             )
         })
 

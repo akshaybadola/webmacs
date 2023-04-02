@@ -15,84 +15,111 @@
 
 import os
 
-from PyQt5.QtWebEngineWidgets import QWebEngineProfile, QWebEngineScript
-from PyQt5.QtCore import QFile, QTextStream
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineScript, \
+    QWebEngineSettings
+from PyQt6.QtCore import QFile, QTextStream
 
 from .scheme_handlers import all_schemes
 from .visited_links import VisitedLinks
-from .autofill import Autofill
-from .autofill.db import PasswordDb
 from .ignore_certificates import IgnoredCertificates
 from .bookmarks import Bookmarks
 from .features import Features
-from . import variables, version
+from . import variables, version, require
+from .password_manager import make_password_manager
+from .variables import define_variable, Bool
 
 
 THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
+enable_javascript = define_variable(
+    "enable-javascript",
+    "Enable the running of javascript programs. Default to True.",
+    True,
+    type=Bool(),
+)
+
+enable_pdfviewer = define_variable(
+    "enable-pdfviewer",
+    "Specifies that PDF documents will be opened in the internal PDF viewer."
+    " Default to False",
+    False,
+    type=Bool(),
+)
+
+
+def make_dir(*parts):
+    path = os.path.join(*parts)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 class Profile(object):
-    def __init__(self, name, q_profile=None):
+    def __init__(self, name, off_the_record=False):
         self.name = name
-        if q_profile is None:
-            q_profile = QWebEngineProfile.defaultProfile()
-
-        self.q_profile = q_profile
-
+        if off_the_record:
+            self.q_profile = QWebEngineProfile()
+        else:
+            self.q_profile = QWebEngineProfile(name)
         self._scheme_handlers = {}  # keep a python reference
 
-    def update_spell_checking(self):
-        if version.min_qt_version < (5, 8):
-            return
-        dicts = variables.get("spell-checking-dictionaries")
-        self.q_profile.setSpellCheckEnabled(bool(dicts))
-        self.q_profile.setSpellCheckLanguages(dicts)
+        app = require(".application").app()
 
-    def enable(self, app):
-        path = os.path.join(app.profiles_path(), self.name)
-        if not os.path.isdir(path):
-            os.makedirs(path)
-
-        self.q_profile.setRequestInterceptor(app.url_interceptor())
+        self.q_profile.setUrlRequestInterceptor(app.url_interceptor())
 
         for handler in all_schemes():
             h = handler(app)
             self._scheme_handlers[handler.scheme] = h
             self.q_profile.installUrlSchemeHandler(handler.scheme, h)
 
-        self.q_profile.setPersistentStoragePath(path)
-        self.q_profile.setPersistentCookiesPolicy(
-            QWebEngineProfile.ForcePersistentCookies)
+        self.path = None
+        self.session_file = None
 
-        if app.instance_name == "default":
-            session_fname = "session.json"
-        else:
-            session_fname = "session-{}.json".format(app.instance_name)
-        self.session_file = os.path.join(path, session_fname)
+        visited_links, ignored_certs, bookmarks, features = \
+            ":memory:", ":memory:", ":memory:", ":memory:"
 
-        self.visitedlinks \
-            = VisitedLinks(os.path.join(path, "visitedlinks.db"))
-        self.autofill \
-            = Autofill(PasswordDb(os.path.join(path, "autofill.db")))
-        self.ignored_certs \
-            = IgnoredCertificates(os.path.join(path, "ignoredcerts.db"))
-        self.bookmarks \
-            = Bookmarks(os.path.join(path, "bookmarks.db"))
-        self.features \
-            = Features(os.path.join(path, "features.db"))
+        if not off_the_record:
+            self.path = path = make_dir(app.profiles_path(), self.name)
+            persistent_path = make_dir(path, "persistent")
+            cache_path = make_dir(path, "cache")
 
-        self.q_profile.setCachePath(os.path.join(path, "cache"))
+            self.q_profile.setPersistentStoragePath(persistent_path)
+            self.q_profile.setPersistentCookiesPolicy(
+                QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+            self.q_profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
+            self.q_profile.setCachePath(cache_path)
+
+            if app.instance_name == "default":
+                session_fname = "session.json"
+            else:
+                session_fname = "session-{}.json".format(app.instance_name)
+            self.session_file = os.path.join(path, session_fname)
+
+            visited_links = os.path.join(path, "visitedlinks.db")
+            ignored_certs = os.path.join(path, "ignoredcerts.db")
+            bookmarks = os.path.join(path, "bookmarks.db")
+            features = os.path.join(path, "features.db")
+
+        self.visitedlinks = VisitedLinks(visited_links)
+        self.ignored_certs = IgnoredCertificates(ignored_certs)
+        self.bookmarks = Bookmarks(bookmarks)
+        self.features = Features(features)
+
         self.q_profile.downloadRequested.connect(
             app.download_manager().download_requested
         )
+        self.password_manager = make_password_manager()
 
         self.update_spell_checking()
 
-        def inject_js(filepath, ipoint=QWebEngineScript.DocumentCreation,
-                      iid=QWebEngineScript.ApplicationWorld, sub_frames=False,
+        def inject_js(filepath,
+                      ipoint=QWebEngineScript.InjectionPoint.DocumentCreation,
+                      iid=QWebEngineScript.ScriptWorldId.ApplicationWorld,
+                      sub_frames=False,
                       script_transform=None):
             f = QFile(filepath)
-            assert f.open(QFile.ReadOnly | QFile.Text)
+            assert f.open(
+                QFile.OpenModeFlag.ReadOnly | QFile.OpenModeFlag.Text)
             src = QTextStream(f).readAll()
             if script_transform:
                 src = script_transform(src)
@@ -119,14 +146,47 @@ class Profile(object):
             contentjs.append(f.read())
 
         script = QWebEngineScript()
-        script.setInjectionPoint(QWebEngineScript.DocumentCreation)
+        script.setInjectionPoint(
+            QWebEngineScript.InjectionPoint.DocumentCreation)
         script.setSourceCode("\n".join(contentjs))
-        script.setWorldId(QWebEngineScript.ApplicationWorld)
+        script.setWorldId(QWebEngineScript.ScriptWorldId.ApplicationWorld)
         script.setRunsOnSubFrames(True)
         self.q_profile.scripts().insert(script)
 
-        inject_js(os.path.join(THIS_DIR, "scripts", "autofill.js"))
+        inject_js(os.path.join(THIS_DIR, "scripts", "password_manager.js"))
+
+        settings = self.q_profile.settings()
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.LinksIncludedInFocusChain, False,
+        )
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.PluginsEnabled, True,
+        )
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True,
+        )
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True,
+        )
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.FocusOnNavigationEnabled, False,
+        )
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.JavascriptEnabled,
+            enable_javascript.value,
+        )
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.PdfViewerEnabled,
+            enable_pdfviewer.value
+        )
+
+    def update_spell_checking(self):
+        dicts = variables.get("spell-checking-dictionaries")
+        self.q_profile.setSpellCheckEnabled(bool(dicts))
+        self.q_profile.setSpellCheckLanguages(dicts)
+
+    def is_off_the_record(self):
+        return self.q_profile.isOffTheRecord()
 
 
-def named_profile(name):
-    return Profile(name)
+named_profile = Profile
