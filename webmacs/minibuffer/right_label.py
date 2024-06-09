@@ -47,31 +47,32 @@ def _update_minibuffer_right_label(window):
         return
 
     buff = window.current_webview().buffer()
-    url = buff.url().url()
-    if "?" in url:
-        url = url.split("?")[0] + "{..}"  # exclude options
-    try:
-        loading_p = BUFF_PROGRESS[buff]
-    except KeyError:
-        loading = ""
-    else:
-        loading = " loading: %d%% " % loading_p
+    if buff:
+        url = buff.url().url()
+        if "?" in url:
+            url = url.split("?")[0] + "{..}"  # exclude options
+        try:
+            loading_p = BUFF_PROGRESS[buff]
+        except KeyError:
+            loading = ""
+        else:
+            loading = " loading: %d%% " % loading_p
 
-    label = window.minibuffer().rlabel
-    if not label.text():
-        # first time we update the label
-        if app().profile.is_off_the_record():
-            label.setStyleSheet("QLabel { background: orangered }")
-    label.setText(
-        MINIBUFFER_RIGHTLABEL.value.format(
-            buffer_current=BUFFERS.index(buff) + 1,
-            buffer_count=len(BUFFERS),
-            local_keymap=keyboardhandler.local_keymap(),
-            mode=getattr(buff, "mode", "unknown"),
-            loading=loading,
-            url=url
+        label = window.minibuffer().rlabel
+        if not label.text():
+            # first time we update the label
+            if app().profile.is_off_the_record():
+                label.setStyleSheet("QLabel { background: orangered }")
+        label.setText(
+            MINIBUFFER_RIGHTLABEL.value.format(
+                buffer_current=BUFFERS.index(buff) + 1,
+                buffer_count=len(BUFFERS),
+                local_keymap=keyboardhandler.local_keymap(),
+                mode=getattr(buff, "mode", "unknown"),
+                loading=loading,
+                url=url
+            )
         )
-    )
 
 
 def update_minibuffer_right_labels():

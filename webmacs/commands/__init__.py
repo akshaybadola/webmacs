@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with webmacs.  If not, see <http://www.gnu.org/licenses/>.
 
-import inspect
-
 from .. import COMMANDS
 from .. import url_opener
 
@@ -35,10 +33,24 @@ class InteractiveCommand(object):
         self.visible = visible
 
     def getdoc(self):
-        return inspect.getdoc(self.binding)
+        return self.binding.__doc__.strip()
 
     def __call__(self, ctx):
         return self.binding(ctx)
+
+
+def autocmd(binding=None, **args):
+    """
+    Register an interactive command and infer name from function name.
+    """
+    name = binding.__name__.replace("_", "-").lower()
+    command = InteractiveCommand(binding, **args)
+    COMMANDS[name] = command
+    if binding is None:
+        def wrapper(func):
+            command.binding = func
+            return func
+        return wrapper
 
 
 def define_command(name, binding=None, **args):

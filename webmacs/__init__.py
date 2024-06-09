@@ -20,7 +20,7 @@ from PyQt6.QtCore import QObject, QEvent, QTimer
 from . import hooks
 
 
-__version__ = '0.9'
+__version__ = '0.9.1'
 
 
 # access to every opened buffers

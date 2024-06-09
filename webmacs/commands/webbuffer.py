@@ -21,7 +21,7 @@ from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt6.QtWebEngineCore import QWebEngineScript
 
 from ..application import app
-from ..commands import define_command
+from ..commands import define_command, autocmd
 from ..minibuffer import Prompt
 from ..webbuffer import WebBuffer, close_buffer, create_buffer
 from ..killed_buffers import KilledBuffer
@@ -63,9 +63,15 @@ class BufferTableModel(QAbstractTableModel):
             if col == 0:
                 return buff.url().toString()
             else:
-                return "[{}] {}".format(BUFFERS.index(buff) + 1, buff.title())
+                if buff in BUFFERS:
+                    return "[{}] {}".format(BUFFERS.index(buff) + 1, buff.title())
+                else:
+                    return None
         elif role == Qt.ItemDataRole.DecorationRole and col == 0:
-            return buff.icon()
+            try:
+                return buff.icon()
+            except Exception:
+                return buff.url().toString()
         elif role == Qt.ItemDataRole.BackgroundRole:
             if buff == current_buffer():
                 if switch_buffer_current_color.value:
@@ -190,6 +196,32 @@ def switch_recent_buffer(ctx):
     buffer = ctx.minibuffer.do_prompt(RecentBufferSwitchListPrompt(ctx))
     if buffer:
         show_buffer(buffer, ctx.view)
+
+
+def _shift_buffer(ctx, reverse=False):
+    buf_indx = BUFFERS.index(ctx.buffer)
+    if reverse:
+        new_indx = (buf_indx - 1) % len(BUFFERS)
+    else:
+        new_indx = (buf_indx + 1) % len(BUFFERS)
+    BUFFERS[new_indx], BUFFERS[buf_indx] = BUFFERS[buf_indx], BUFFERS[new_indx]
+    show_buffer(ctx.buffer, ctx.view)
+
+
+@autocmd
+def shift_buffer_left(ctx):
+    """
+    Shift current buffer one step left in the list of buffers.
+    """
+    _shift_buffer(ctx, True)
+
+
+@autocmd
+def shift_buffer_right(ctx):
+    """
+    Shift current buffer one step right in the list of buffers.
+    """
+    _shift_buffer(ctx)
 
 
 def _next_buffer(ctx, reverse=False):

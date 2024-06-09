@@ -215,7 +215,9 @@ def is_one_letter_upcase(char):
 
 
 _KeyPress = namedtuple("_KeyPress", ("key", "control_modifier", "alt_modifier",
-                                     "super_modifier", "is_upper_case"))
+                                     "super_modifier",
+                                     "shift_modifier",
+                                     "is_upper_case"))
 
 
 class KeyPress(_KeyPress):
@@ -241,12 +243,13 @@ class KeyPress(_KeyPress):
             bool(modifiers & Qt.KeyboardModifier.ControlModifier),
             bool(modifiers & Qt.KeyboardModifier.AltModifier),
             bool(modifiers & Qt.KeyboardModifier.MetaModifier),
-            is_one_letter_upcase(text)
+            bool(modifiers & Qt.KeyboardModifier.ShiftModifier),
+            is_one_letter_upcase(text),
         )
 
     @classmethod
     def from_str(cls, string):
-        ctrl, alt, super = False, False, False
+        ctrl, alt, super, shift = False, False, False, False
         left, _, text = string.rpartition("-")
         if text == "":
             text = "-"
@@ -271,11 +274,14 @@ class KeyPress(_KeyPress):
         except KeyError:
             raise Exception("Unknown key %s" % text)
 
+        if is_one_letter_upcase(text):
+            shift = True
         return cls(
             key,
             ctrl,
             alt,
             super,
+            shift,
             is_one_letter_upcase(text)
         )
 
@@ -288,6 +294,8 @@ class KeyPress(_KeyPress):
             modifiers |= Qt.KeyboardModifier.AltModifier
         if self.super_modifier:
             modifiers |= Qt.KeyboardModifier.MetaModifier
+        # if self.shift_modifier:
+        #     modifiers |= Qt.KeyboardModifier.ShiftModifier
 
         if self.is_upper_case:
             return QKeyEvent(type, key, modifiers, KEY2CHAR[key].upper())
