@@ -39,7 +39,7 @@ class VisitedLinks(object):
         self._conn.execute("""
         INSERT OR REPLACE INTO visitedlinks (url, title, lastseen)
         VALUES (?, ?, ?)
-        """, (url, title, datetime.now()))
+        """, (url, title, datetime.now().isoformat()))
         self._conn.commit()
 
     def visited_urls(self):
