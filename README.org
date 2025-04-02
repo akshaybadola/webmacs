@@ -1,3 +1,11 @@
+* About the Fork
+
+  As evident, this is a fork of ~webmacs~ by parkouss https://github.com/parkouss/webmacs.
+  I started this fork to add some customizations and after parkouss stopped maintaining it,
+  I simply patched it as newer PyQt versions were released. There are very few differences
+  from the original as I'm not as familiar with PyQt as the original author. However,
+  I try to add something according to my convenience from time to time.
+
 * webmacs
 
 *webmacs* is yet another browser for keyboard-based web navigation.
