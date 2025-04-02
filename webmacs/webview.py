@@ -119,8 +119,9 @@ class WebView(QFrame):
         self.setStyle(self.style())
 
     def internal_view(self):
-        if self.layout().count() > 0:
-            return self.layout().itemAt(0).widget()
+        layout = self.layout()
+        if layout is not None and layout.count() > 0:
+            return layout.itemAt(0).widget()
 
 
 class InternalWebView(QWebEngineView):

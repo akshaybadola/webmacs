@@ -15,8 +15,10 @@
 
 import json
 import logging
+import shutil
+import sys
 
-from .import BUFFERS, windows, current_window
+from . import BUFFERS, windows, current_window
 from .webbuffer import create_buffer, QUrl, DelayedLoadingUrl, close_buffer
 from .window import Window
 
@@ -35,54 +37,46 @@ def _session_load(stream):
 
     # now, load urls in buffers
     for url in urls:
-        if isinstance(url, str):
-            # old format, no delay loading support
-            # TODO must be removed after some time
-            create_buffer(url)
-        else:
-            # new format, url must be a dict
-            buff = create_buffer(DelayedLoadingUrl(
-                url=QUrl(url["url"]),
-                title=url["title"]
-            ))
-            if version >= 2:
-                buff.last_use = url["last_use"]
+        # new format, url must be a dict
+        buff = create_buffer(DelayedLoadingUrl(
+            url=QUrl(url["url"]),
+            title=url["title"]
+        ))
+        if version >= 2:
+            buff.last_use = url["last_use"]
 
-    if version > 0:
-        def create_window(wdata):
-            win = Window()
-            win.restore_state(wdata, version)
-            win.show()
+    def create_window(wdata):
+        win = Window()
+        win.restore_state(wdata, version)
+        win.show()
 
-        current_index = data.get("current-window", 0)
-        for i, wdata in enumerate(data["windows"]):
-            if i != current_index:
-                create_window(wdata)
+    current_index = data.get("current-window", 0)
+    for i, wdata in enumerate(data["windows"]):
+        if i != current_index:
+            create_window(wdata)
 
-        # create the current last, so it has focus and is on top
-        create_window(data["windows"][current_index])
-
-    else:
-        cwin = Window()
-        cwin.showMaximized()
-
-        # and open the first buffer in the view
-        if BUFFERS:
-            cwin.current_webview().setBuffer(BUFFERS[0])
+    # create the current last, so it has focus and is on top
+    create_window(data["windows"][current_index])
 
 
 def _session_save(stream):
+    win_state = [w.dump_state() for w in windows()]
     urls = [{
         "url": b.url().toString(),
         "title": b.title(),
         "last_use": b.last_use,
     } for b in BUFFERS]
 
+    try:
+        win_index = windows().index(current_window())
+    except Exception:
+        if current_window() is None:
+            win_index = 0
     json.dump({
         "version": FORMAT_VERSION,
         "urls": urls,
-        "windows": [w.dump_state() for w in windows()],
-        "current-window": windows().index(current_window()),
+        "windows": win_state,
+        "current-window": win_index,
     }, stream)
 
 
@@ -108,13 +102,25 @@ def session_load(session_file):
     if session_file is None:
         return
     try:
-        with open(session_file, "r") as f:
+        with open(session_file) as f:
             _session_load(f)
     except Exception:
-        logging.exception("Unable to load the session from %s.",
-                          session_file)
-        session_clean()
-        raise
+        logging.warning("Unable to load the session from %s. Trying backup",
+                        session_file)
+        try:
+            session_file = session_file + ".backup"
+            with open(session_file) as f:
+                _session_load(f)
+        except Exception:
+            logging.exception("Unable to load the session from backup file %s.",
+                              session_file)
+            y_n = None
+            while y_n not in {"y", "n"}:
+                y_n = input("Could not load from backup. Create new session? (y/n)")
+            if y_n == "y":
+                session_clean()
+            else:
+                sys.exit(1)
 
 
 def session_save(session_file):
@@ -123,5 +129,6 @@ def session_save(session_file):
     """
     Save the session for the given profile.
     """
+    shutil.copy(session_file, session_file + ".backup")
     with open(session_file, "w") as f:
         _session_save(f)

@@ -153,8 +153,11 @@ class WebBuffer(QWebEnginePage):
 
     def view(self):
         iv = self._internal_view
-        if iv and iv.isVisible():
-            return iv.view()
+        try:
+            if iv and iv.isVisible():
+                return iv.view()
+        except Exception:
+            return None
 
     @property
     def mode(self):
@@ -315,7 +318,6 @@ class WebBuffer(QWebEnginePage):
         view = self.view()
         if view and not LOCAL_KEYMAP_SETTER.enabled_minibuffer \
            and view.main_window.current_webview() == view:
-
             view.internal_view().setFocus()
 
     def handle_authentication(self, url, authenticator):

@@ -61,6 +61,11 @@ class Profile(object):
             self.q_profile = QWebEngineProfile()
         else:
             self.q_profile = QWebEngineProfile(name)
+        # NOTE: code below should work but doesn't with sciencedirect.
+        #       Could be a min chrome version issue
+        # user_agent = re.sub(r'(.+)QtWebEngine.+? (.+)', r'\1\2', self.q_profile.httpUserAgent())
+        user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        self.q_profile.setHttpUserAgent(user_agent)
         self._scheme_handlers = {}  # keep a python reference
 
         app = require(".application").app()

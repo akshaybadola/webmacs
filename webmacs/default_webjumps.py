@@ -40,7 +40,7 @@ def complete_google():
 
 
 define_webjump("google",
-               "https://www.google.com/search?q=%s&ie=utf-8&oe=utf-8",
+               "https://www.google.com/search?q=%s&ie=utf-8&oe=utf-8&num=50",
                "Google Search",
                complete_fn=complete_google)
 

@@ -181,8 +181,11 @@ def init(opts):
     from .window import Window
     from .webbuffer import create_buffer
 
+    def session_save_on_exit():
+        session_save(a.profile.session_file)
+
     a = app()
-    a.aboutToQuit.connect(lambda: session_save(a.profile.session_file))
+    a.aboutToQuit.connect(session_save_on_exit)
 
     def create_window(url):
         w = Window()

@@ -21,7 +21,7 @@ from PyQt6.QtGui import QKeyEvent
 
 from .. import COMMANDS
 
-
+SHIFTPUNC: str = set()
 KEY2CHAR = {}
 CHAR2KEY = {}
 KEYMAPS = {}
@@ -214,6 +214,10 @@ def is_one_letter_upcase(char):
     return len(char) == 1 and char.isalpha() and char.isupper()
 
 
+def in_custom_punc_with_shift(char):
+    return len(char) == 1 and char in SHIFTPUNC
+
+
 _KeyPress = namedtuple("_KeyPress", ("key", "control_modifier", "alt_modifier",
                                      "super_modifier",
                                      "shift_modifier",
@@ -274,7 +278,7 @@ class KeyPress(_KeyPress):
         except KeyError:
             raise Exception("Unknown key %s" % text)
 
-        if is_one_letter_upcase(text):
+        if is_one_letter_upcase(text) or in_custom_punc_with_shift(text):
             shift = True
         return cls(
             key,
@@ -541,6 +545,14 @@ Local keymap used when hinting.
 ISEARCH_KEYMAP = Keymap("i-search", parent=MINIBUFFER_KEYMAP, doc="""\
 Local keymap used in incremental search.
 """)
+
+
+def custom_shift_punc():
+    """Returns the global :class:`set` SHIFTPUNC, which stores
+    the custom SHIFT modifiers for punctuation chars.
+
+    """
+    return SHIFTPUNC
 
 
 def global_keymap():
